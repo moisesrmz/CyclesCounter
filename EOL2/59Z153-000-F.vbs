@@ -5,7 +5,7 @@ Dim objFSO, objReadFile, contents, strCommand, x, WshShell, WshShellExec
 
 'Set Objects 
 Set objFSO = CreateObject("Scripting.FileSystemObject") 
-Set objReadFile = objFSO.OpenTextFile("\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter\Percha2\59Z113-000-F.txt", 1, False)
+Set objReadFile = objFSO.OpenTextFile("\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter\EOL2\59Z153-000-F.txt", 1, False)
 
 'Read file contents 
 contents = objReadFile.ReadAll
@@ -13,15 +13,15 @@ contents = contents+1
 objReadFile.close
 
 'kill process start
-If contents >= 100000 Then
-	strCommand = "taskkill /f /im wtt.exe"
-	x=msgbox("Se han rebasado las 100,000 activaciones de la contraparte '59Z113-000-F', favor de contactar a Ingenieria de Pruebas.",16,"Limite Rebasado")
+If contents >= 30000 Then
+	strCommand = "taskkill /f /im easywire.exe"
+	x=msgbox("Se han rebasado las 30,000 activaciones de la contraparte '59Z153-000-F', favor de contactar a Ingenieria de Pruebas.",16,"Limite Rebasado")
 	Set WshShell = CreateObject("WScript.Shell")
 	Set WshShellExec = WshShell.Exec(strCommand)	
 End If
 'kill proces end
 
-Set objReadFile = objFSO.OpenTextFile("\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter\Percha2\59Z113-000-F.txt", 2, False)
+Set objReadFile = objFSO.OpenTextFile("\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter\EOL2\59Z153-000-F.txt", 2, False)
 objReadFile.Write  (contents)
 'Close file 
 objReadFile.close

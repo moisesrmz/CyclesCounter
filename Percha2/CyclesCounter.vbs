@@ -12,11 +12,14 @@ archivos = Array( _
     "59Z117-C01-A.txt", _
     "59Z118-C00-D.txt", _
     "59Z118-C00-L.txt", _
+    "59Z153-000-D.txt", _
+    "59Z153-000-L.txt", _
     "59Z163-003-A.txt", _
     "59Z163-003-B.txt", _
     "59Z176-C01-B.txt", _
     "59Z176-C01-C.txt", _
-    "59Z176-C01-D.txt" _
+    "59Z176-C01-D.txt", _
+    "AMZW01-000-F.txt" _
 )
 
 Set objFSO = CreateObject("Scripting.FileSystemObject")

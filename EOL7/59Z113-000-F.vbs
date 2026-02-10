@@ -13,9 +13,9 @@ contents = contents+1
 objReadFile.close
 
 'kill process start
-If contents >= 50000 Then
+If contents >= 30000 Then
 	strCommand = "taskkill /f /im wtt.exe"
-	x=msgbox("Se han rebasado las 50,000 activaciones de la contraparte '59Z113-000-F', favor de contactar a Ingenieria de Pruebas.",16,"Limite Rebasado")
+	x=msgbox("Se han rebasado las 30,000 activaciones de la contraparte '59Z113-000-F', favor de contactar a Ingenieria de Pruebas.",16,"Limite Rebasado")
 	Set WshShell = CreateObject("WScript.Shell")
 	Set WshShellExec = WshShell.Exec(strCommand)	
 End If
