@@ -13,6 +13,9 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 from matplotlib.patches import Wedge
+from pywinauto import Application
+from pywinauto.findwindows import ElementNotFoundError
+
 
 EMBEDDED_QTY_EXCEPTIONS = [
     (2088701244, '2088701244', 9), (2088701390, '2088701390', 8), (2088701610, '2088701610', 9),
@@ -257,6 +260,58 @@ class FileModifiedHandler(FileSystemEventHandler):
             print("📦 QTY excepciones cargadas desde datos embebidos.")
         except Exception as e:
             print(f"⚠️ Error al cargar datos embebidos: {e}")
+class ExternalAppMonitor:
+    def __init__(self, window_title="Test Program"):
+        self.window_title = window_title
+        self.app = None
+        self.window = None
+        self.last_message = None
+        self.running = True
+
+        threading.Thread(target=self.monitor_loop, daemon=True).start()
+
+    def connect_to_app(self):
+        try:
+            self.app = Application(backend="uia").connect(title=self.window_title)
+            self.window = self.app.window(title=self.window_title)
+            print("✅ Conectado a Test Program")
+        except Exception:
+            self.app = None
+            self.window = None
+
+    def read_pane_text(self):
+        try:
+            panes = self.window.descendants(control_type="Pane")
+
+            for pane in panes:
+                text = pane.window_text().strip()
+                if text in ["Good", "Bad", "Attach then Start", "Ready to Test"]:
+                    return text
+
+        except Exception:
+            pass
+
+        return None
+
+    def monitor_loop(self):
+        while self.running:
+            if not self.app:
+                self.connect_to_app()
+                time.sleep(2)
+                continue
+
+            try:
+                message = self.read_pane_text()
+
+                if message and message != self.last_message:
+                    print(f"📡 Test Program: {message}")
+                    self.last_message = message
+
+            except ElementNotFoundError:
+                self.app = None
+                self.window = None
+
+            time.sleep(0.5)
 
 def show_np_not_found_toast():
     toast = tk.Toplevel()
@@ -356,6 +411,7 @@ def main():
     root.bind("<Button-1>", on_title_bar_click)
     root.bind("<B1-Motion>", on_drag_motion)
     root.bind("6", toggle_vbs_script)
+    external_monitor = ExternalAppMonitor("Test Program")
     try:
         root.mainloop()
     except KeyboardInterrupt:
