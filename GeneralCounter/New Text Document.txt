@@ -1,73 +1,34 @@
-Microsoft Windows [Version 10.0.17763.8276]
-(c) 2018 Microsoft Corporation. All rights reserved.
+using System;
+using System.Runtime.InteropServices;
 
-C:\Users\EasyTouch>cd Desktop
+class Program
+{
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
-C:\Users\EasyTouch\Desktop>python ContadorGeneralParaCirris.pyw
-QWindowsContext: OleInitialize() failed:  "COM error 0xffffffff80010106 RPC_E_CHANGED_MODE (Unknown error 0x080010106)"
-?? QTY excepciones cargadas desde datos embebidos.
-[Monitor] excepción (ver monitor_crash_log.txt): timed out
-Traceback (most recent call last):
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 467, in run
-    win = self.connect_window()
-          ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 445, in connect_window
-    w.wait("exists", timeout=5)
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\application.py", line 529, in wait
-    wait_until(timeout, retry_interval,
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\timings.py", line 375, in wait_until
-    raise err
-pywinauto.timings.TimeoutError: timed out
+    const int WM_SETTEXT = 0x000C;
+    const int WM_KEYDOWN = 0x0100;
+    const int WM_KEYUP = 0x0101;
+    const int VK_RETURN = 0x0D;
 
-[Monitor] excepción (ver monitor_crash_log.txt): timed out
-Traceback (most recent call last):
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 467, in run
-    win = self.connect_window()
-          ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 445, in connect_window
-    w.wait("exists", timeout=5)
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\application.py", line 529, in wait
-    wait_until(timeout, retry_interval,
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\timings.py", line 375, in wait_until
-    raise err
-pywinauto.timings.TimeoutError: timed out
+    static void Main()
+    {
+        IntPtr hEdit = (IntPtr)1509722;
 
-[Monitor] excepción (ver monitor_crash_log.txt): timed out
-Traceback (most recent call last):
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 467, in run
-    win = self.connect_window()
-          ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 445, in connect_window
-    w.wait("exists", timeout=5)
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\application.py", line 529, in wait
-    wait_until(timeout, retry_interval,
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\timings.py", line 375, in wait_until
-    raise err
-pywinauto.timings.TimeoutError: timed out
+        if (hEdit == IntPtr.Zero)
+        {
+            Console.WriteLine("Handle inválido.");
+            return;
+        }
 
-[Monitor] excepción (ver monitor_crash_log.txt): timed out
-Traceback (most recent call last):
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 467, in run
-    win = self.connect_window()
-          ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 445, in connect_window
-    w.wait("exists", timeout=5)
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\application.py", line 529, in wait
-    wait_until(timeout, retry_interval,
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\timings.py", line 375, in wait_until
-    raise err
-pywinauto.timings.TimeoutError: timed out
+        // 1?? Escribir texto
+        SendMessage(hEdit, WM_SETTEXT, IntPtr.Zero,
+            Marshal.StringToHGlobalAuto("Probando"));
 
-[Monitor] excepción (ver monitor_crash_log.txt): timed out
-Traceback (most recent call last):
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 467, in run
-    win = self.connect_window()
-          ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\EasyTouch\Desktop\ContadorGeneralParaCirris.pyw", line 445, in connect_window
-    w.wait("exists", timeout=5)
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\application.py", line 529, in wait
-    wait_until(timeout, retry_interval,
-  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\site-packages\pywinauto\timings.py", line 375, in wait_until
-    raise err
-pywinauto.timings.TimeoutError: timed out
+        // 2?? Enviar ENTER
+        SendMessage(hEdit, WM_KEYDOWN, (IntPtr)VK_RETURN, IntPtr.Zero);
+        SendMessage(hEdit, WM_KEYUP, (IntPtr)VK_RETURN, IntPtr.Zero);
 
+        Console.WriteLine("Texto y ENTER enviados.");
+    }
+}

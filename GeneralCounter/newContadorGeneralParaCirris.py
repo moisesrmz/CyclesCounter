@@ -267,7 +267,7 @@ def update_window_title():
 
     if current_test_state:
         root.title(
-            f"Corrida Actual - Turno {turno} --First Pass Yield--                | {current_test_state}"
+            f"Corrida Actual - Turno {turno} --First Pass Yield--                  {current_test_state}"
         )
     else:
         root.title(
@@ -354,10 +354,15 @@ class ConsoleUiMonitor(threading.Thread):
 
         try:
             try:
-                pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+                pythoncom.CoInitialize()
                 initialized_here = True
             except pythoncom.com_error as e:
-                print("Aviso COM:", e)
+                # Ignorar RPC_E_CHANGED_MODE específicamente
+                if hasattr(e, "hresult") and e.hresult == -2147417850:
+                    # RPC_E_CHANGED_MODE → ya estaba inicializado, no es fatal
+                    pass
+                else:
+                    print("Error COM inesperado:", e)
 
             win = None
             pane = None
@@ -433,11 +438,10 @@ class ConsoleUiMonitor(threading.Thread):
                     time.sleep(RETRY_MS / 1000)
 
         finally:
-            if initialized_here:
-                try:
-                    pythoncom.CoUninitialize()
-                except:
-                    pass
+            try:
+                pythoncom.CoUninitialize()
+            except:
+                pass
 
 def main():
     global root, vbs_process
