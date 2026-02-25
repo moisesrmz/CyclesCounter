@@ -13,10 +13,6 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 from matplotlib.patches import Wedge
-import csv
-import calendar
-from tkinter import messagebox
-
 
 EMBEDDED_QTY_EXCEPTIONS = [
     (2088701244, '2088701244', 9), (2088701390, '2088701390', 8), (2088701610, '2088701610', 9),
@@ -66,7 +62,6 @@ EMBEDDED_QTY_EXCEPTIONS = [
     (2154170049, 'SJ8T-19A397-REB', 17), (2154170050, 'SJ8T-19A397-EB', 19),
     (2154170052, 'SJ8T-19A397-LEA', 13)
 ]
-focus_paused = False
 
 class FileModifiedHandler(FileSystemEventHandler):
     def __init__(self, label, cycle_label, fail_label, yield_label, canvas, frame_color):
@@ -297,7 +292,7 @@ def get_turno_actual():
         return 3
 
 def main():
-    global root, vbs_process, observer
+    global root, vbs_process
     vbs_process = None
     root = tk.Tk()
     # Establecer el título dinámico desde el arranque
@@ -360,143 +355,13 @@ def main():
     force_focus()
     root.bind("<Button-1>", on_title_bar_click)
     root.bind("<B1-Motion>", on_drag_motion)
-    root.bind("0", open_scan_window)
     root.bind("6", toggle_vbs_script)
-    root.bind("<Control-Shift-q>", safe_exit)
-
-
     try:
         root.mainloop()
     except KeyboardInterrupt:
         print("Aplicación cerrada.")
     observer.stop()
     observer.join()
-
-def open_scan_window(event=None):
-    global focus_paused
-    focus_paused = True  # Pausa focus forzado
-
-    scan_window = tk.Toplevel(root)
-    scan_window.title("Escaneo de Módulos")
-    scan_window.geometry("320x340+700+400")  # Tamaño más compacto
-    scan_window.configure(bg="#ECECEC")
-    scan_window.grab_set()
-    scan_window.resizable(False, False)
-
-    tk.Label(scan_window, text="📦 Escanea los módulos", font=("Segoe UI", 11, "bold"), bg="#ECECEC").pack(pady=6)
-
-    entry = tk.Entry(scan_window, font=("Segoe UI", 12))
-    entry.pack(pady=5, padx=10, fill="x")
-    entry.focus_set()
-
-    tree = ttk.Treeview(scan_window, columns=("Código"), show="headings", height=8)
-    tree.heading("Código", text="Código del Módulo")
-    tree.pack(padx=10, pady=10, fill="both", expand=True)
-
-    def on_enter(event):
-        code = entry.get().strip()
-        if code:
-            existing = [tree.item(i)["values"][0] for i in tree.get_children()]
-            if code not in existing:
-                tree.insert("", "end", values=(code,))
-            entry.delete(0, "end")
-
-    entry.bind("<Return>", on_enter)
-
-    frame_btn = tk.Frame(scan_window, bg="#ECECEC")
-    frame_btn.pack(pady=8)
-
-    def finalizar():
-        total = len(tree.get_children())
-        guardar_modulos(tree)
-        show_summary_toast(total)
-        close_scan_window()
-
-    def close_scan_window():
-        global focus_paused
-        focus_paused = False  # Reactiva el focus
-        scan_window.destroy()
-
-    tk.Button(frame_btn, text="✅ Finalizar", font=("Segoe UI", 10), bg="#4CAF50", fg="white", width=10, command=finalizar).pack(side="left", padx=8)
-    tk.Button(frame_btn, text="❌ Cancelar", font=("Segoe UI", 10), bg="#D32F2F", fg="white", width=10, command=close_scan_window).pack(side="left", padx=8)
-
-def guardar_modulos(tree):
-    """Guarda los módulos escaneados en CSV semanal."""
-    from datetime import datetime
-    tester_file_path = r"C:\Users\Public\Documents\Cirris\tester.txt"
-
-    # Detectar tester
-    if os.path.exists(tester_file_path):
-        with open(tester_file_path, 'r') as f:
-            tester_name = f.read().strip()
-    else:
-        tester_name = "DESCONOCIDO"
-
-    modulos = [tree.item(i)["values"][0] for i in tree.get_children()]
-    if not modulos:
-        print("⚠️ No se escanearon módulos.")
-        return
-
-    # Semana actual
-    now = datetime.now()
-    year = now.year
-    week = now.isocalendar()[1]
-
-    # Carpeta de destino (red)
-    base_folder = r"\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter\GeneralCounter\ModulosEscaneados"
-    os.makedirs(base_folder, exist_ok=True)
-
-    csv_name = f"ModulosEscaneados_Semana_{week}_{year}.csv"
-    csv_path = os.path.join(base_folder, csv_name)
-
-    file_exists = os.path.exists(csv_path)
-
-    with open(csv_path, "a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        if not file_exists:
-            writer.writerow(["Fecha", "Hora", "Tester", "Línea", "Módulos..."])
-
-        fecha = now.strftime("%Y-%m-%d")
-        hora = now.strftime("%H:%M:%S")
-        linea = "EOL" + ''.join([c for c in tester_name if c.isdigit()]) if any(ch.isdigit() for ch in tester_name) else tester_name
-        writer.writerow([fecha, hora, tester_name, linea] + modulos)
-
-    print(f"✅ {len(modulos)} módulos guardados para {tester_name} en {csv_path}")
-
-def show_summary_toast(total):
-    """Muestra un mensaje visual de confirmación."""
-    from datetime import datetime
-    now = datetime.now()
-    week = now.isocalendar()[1]
-
-    tester_file_path = r"C:\Users\Public\Documents\Cirris\tester.txt"
-    if os.path.exists(tester_file_path):
-        with open(tester_file_path, 'r') as f:
-            tester_name = f.read().strip()
-    else:
-        tester_name = "DESCONOCIDO"
-
-    toast = tk.Toplevel()
-    toast.overrideredirect(True)
-    toast.attributes("-topmost", True)
-    toast.attributes("-alpha", 0.93)
-    toast.configure(bg="#4CAF50")
-
-    screen_width = toast.winfo_screenwidth()
-    screen_height = toast.winfo_screenheight()
-    width, height = 360, 70
-    x = (screen_width // 2) - (width // 2)
-    y = (screen_height // 2) - (height // 2) - 100
-    toast.geometry(f"{width}x{height}+{x}+{y}")
-
-    frame = tk.Frame(toast, bg="#4CAF50", bd=0)
-    frame.pack(expand=True, fill="both")
-
-    msg = f"✅ {total} módulos guardados para {tester_name}\nSemana {week}"
-    label = tk.Label(frame, text=msg, font=("Segoe UI", 13, "bold"), fg="white", bg="#4CAF50")
-    label.pack(expand=True)
-
-    toast.after(3000, toast.destroy)
 
 def toggle_vbs_script(event=None):
     global vbs_process
@@ -524,16 +389,13 @@ def toggle_vbs_script(event=None):
                 print(f"Error al detener el script: {e}")
 
 def force_focus():
-    global focus_paused
     try:
-        if not focus_paused:
-            root.attributes('-topmost', True)        # Siempre al frente
-            root.focus_force()                       # Forzar foco solo si no está pausado
-            root.update_idletasks()
+        root.attributes('-topmost', True)        # Siempre al frente
+        root.focus_force()                       # Forzar foco
+        root.update_idletasks()
     except Exception as e:
         print(f"⚠️ Error forzando foco: {e}")
     root.after(1500, force_focus)  # Cada 1.5s, balanceado
-
 
 def on_title_bar_click(event):
     """Guarda la posición inicial del mouse al hacer clic en la ventana."""
@@ -551,20 +413,6 @@ def on_drag_motion(event):
 def close_app(event=None):
     print("Aplicación cerrada por el usuario.")
     root.destroy()
-
-def safe_exit(event=None):
-    """Permite cierre controlado con confirmación visual"""
-    global observer  # <-- 🔥 Esto hace visible el observer declarado en main
-    confirm = messagebox.askyesno("Confirmar cierre", "¿Deseas cerrar la aplicación?")
-    if confirm:
-        print("🔒 Aplicación cerrada manualmente.")
-        try:
-            if 'observer' in globals() and observer and observer.is_alive():
-                observer.stop()
-                observer.join()
-        except Exception as e:
-            print(f"⚠️ Error al detener observer: {e}")
-        root.destroy()
 
 if __name__ == "__main__":
     main()

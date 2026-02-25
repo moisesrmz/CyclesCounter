@@ -13,6 +13,14 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 from matplotlib.patches import Wedge
+import pythoncom
+from pywinauto import Desktop
+from pywinauto.timings import TimeoutError as PwaTimeoutError
+
+
+current_test_state = None
+
+
 
 EMBEDDED_QTY_EXCEPTIONS = [
     (2088701244, '2088701244', 9), (2088701390, '2088701390', 8), (2088701610, '2088701610', 9),
@@ -93,7 +101,10 @@ class FileModifiedHandler(FileSystemEventHandler):
         self.draw_gauge()
 
     def start_timer(self):
-        threading.Timer(60, self.check_reset).start()
+        t = threading.Timer(60, self.check_reset)
+        t.daemon = True
+        t.start()
+
 
     def check_reset(self):
         current_time = datetime.now().time()
@@ -122,14 +133,6 @@ class FileModifiedHandler(FileSystemEventHandler):
         self.load_qty_exceptions()
         print("Reinicio - Reset de red rabbits")
     
-    def get_turno_actual(self):
-        now = datetime.now().time()
-        if now >= datetime.strptime("06:24", "%H:%M").time() and now < datetime.strptime("14:24", "%H:%M").time():
-            return 1
-        elif now >= datetime.strptime("14:24", "%H:%M").time() and now < datetime.strptime("21:54", "%H:%M").time():
-            return 2
-        else:
-            return 3
 
     def on_modified(self, event):
         self.update_yield()
@@ -258,6 +261,19 @@ class FileModifiedHandler(FileSystemEventHandler):
         except Exception as e:
             print(f"⚠️ Error al cargar datos embebidos: {e}")
 
+
+def update_window_title():
+    turno = get_turno_actual()
+
+    if current_test_state:
+        root.title(
+            f"Corrida Actual - Turno {turno} --First Pass Yield--                  {current_test_state}"
+        )
+    else:
+        root.title(
+            f"Corrida Actual - Turno {turno} --First Pass Yield--"
+        )
+
 def show_np_not_found_toast():
     toast = tk.Toplevel()
     toast.overrideredirect(True)
@@ -290,6 +306,142 @@ def get_turno_actual():
         return 2
     else:
         return 3
+# =======================
+#  MONITOR CONSOLA - TEST MONITOR
+# =======================
+
+TITLE_CONTAINS = "Test Program"
+POLL_MS = 100
+RETRY_MS = 300
+#STATE_NAMES = {"Good", "Bad", "Attach then Start", "Ready to Test"}
+
+
+def find_top_state_pane(win):
+    candidates = []
+
+    for p in win.descendants(control_type="Pane"):
+        try:
+            name = (p.window_text() or "").strip()
+            if not name:
+                continue
+
+            r = p.rectangle()
+            if r.width() <= 0 or r.height() <= 0:
+                continue
+
+            candidates.append((r.top, r.width() * r.height(), p))
+        except Exception:
+            pass
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: (x[0], -x[1]))
+    return candidates[0][2]
+
+class ConsoleUiMonitor(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True)
+        self._running = threading.Event()
+        self._running.set()
+
+    def stop(self):
+        self._running.clear()
+        self.join(timeout=2)
+
+    def run(self):
+        initialized_here = False
+
+        try:
+            try:
+                pythoncom.CoInitialize()
+                initialized_here = True
+            except pythoncom.com_error as e:
+                # Ignorar RPC_E_CHANGED_MODE específicamente
+                if hasattr(e, "hresult") and e.hresult == -2147417850:
+                    # RPC_E_CHANGED_MODE → ya estaba inicializado, no es fatal
+                    pass
+                else:
+                    print("Error COM inesperado:", e)
+
+            win = None
+            pane = None
+            last_state = None
+            waiting_printed = False
+
+            while self._running.is_set():
+
+                try:
+                    if win is None:
+                        try:
+                            d = Desktop(backend="uia")
+                            win = d.window(title_re=f".*{TITLE_CONTAINS}.*")
+                            win.wait("exists", timeout=2)
+
+                            pane = None
+                            last_state = None
+
+                            print("✅ Conectado a Test monitor")
+                            waiting_printed = False
+
+                        except PwaTimeoutError:
+                            if not waiting_printed:
+                                print("⏳ Esperando ventana 'Test monitor'...")
+                                waiting_printed = True
+
+                            time.sleep(RETRY_MS / 1000)
+                            continue
+
+                    try:
+                        win.wait("exists", timeout=0.2)
+                    except Exception:
+                        print("⚠️ Ventana cerrada. Reintentando conexión...")
+                        win = None
+                        pane = None
+                        last_state = None
+                        time.sleep(RETRY_MS / 1000)
+                        continue
+
+                    if pane is None:
+                        pane = find_top_state_pane(win)
+                        if pane is None:
+                            time.sleep(RETRY_MS / 1000)
+                            continue
+
+                    state = " ".join((pane.window_text() or "").strip().split())
+                    if state != last_state:
+                        if state:
+                            print(f"📡 Estado detectado: {state}")
+                        else:
+                            print("📡 Estado vacío o transición")
+
+                        last_state = state
+
+                        global current_test_state
+                        current_test_state = state if state else None
+
+                        try:
+                            if root.winfo_exists():
+                                root.after(0, update_window_title)
+                        except Exception:
+                            pass
+
+
+
+                    time.sleep(POLL_MS / 1000)
+
+                except Exception as e:
+                    print("⚠️ UIA stale / reiniciando conexión:", e)
+                    win = None
+                    pane = None
+                    last_state = None
+                    time.sleep(RETRY_MS / 1000)
+
+        finally:
+            try:
+                pythoncom.CoUninitialize()
+            except:
+                pass
 
 def main():
     global root, vbs_process
@@ -298,7 +450,8 @@ def main():
     # Establecer el título dinámico desde el arranque
     turno = get_turno_actual()
     root.protocol("WM_DELETE_WINDOW", lambda: print("❌ Botón cerrar deshabilitado"))
-    root.title(f"Corrida Actual - Turno {turno}")
+    #root.title(f"Corrida Actual - Turno {turno}")
+    root.title(f"Corrida Actual - Turno {turno} --First Pass Yield--")
     #root.title("Monitor de Piezas Probadas")
     root.geometry("580x150+435+520")  #  Ampliamos el ancho para mejor distribución
     root.resizable(False, False)
@@ -353,13 +506,25 @@ def main():
     observer.schedule(file_handler, file_handler.folder_path, recursive=True)
     observer.start()
     force_focus()
+    # ---- Monitor consola Test monitor ----
+    console_monitor = ConsoleUiMonitor()
+    console_monitor.start()
     root.bind("<Button-1>", on_title_bar_click)
     root.bind("<B1-Motion>", on_drag_motion)
     root.bind("6", toggle_vbs_script)
+    
+    
     try:
         root.mainloop()
     except KeyboardInterrupt:
         print("Aplicación cerrada.")
+
+    # ---- Limpieza ordenada ----
+    try:
+        console_monitor.stop()
+    except:
+        pass
+
     observer.stop()
     observer.join()
 
