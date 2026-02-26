@@ -1,34 +1,36 @@
-using System;
-using System.Runtime.InteropServices;
-
-class Program
-{
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-
-    const int WM_SETTEXT = 0x000C;
-    const int WM_KEYDOWN = 0x0100;
-    const int WM_KEYUP = 0x0101;
-    const int VK_RETURN = 0x0D;
-
-    static void Main()
-    {
-        IntPtr hEdit = (IntPtr)1509722;
-
-        if (hEdit == IntPtr.Zero)
-        {
-            Console.WriteLine("Handle inválido.");
-            return;
-        }
-
-        // 1?? Escribir texto
-        SendMessage(hEdit, WM_SETTEXT, IntPtr.Zero,
-            Marshal.StringToHGlobalAuto("Probando"));
-
-        // 2?? Enviar ENTER
-        SendMessage(hEdit, WM_KEYDOWN, (IntPtr)VK_RETURN, IntPtr.Zero);
-        SendMessage(hEdit, WM_KEYUP, (IntPtr)VK_RETURN, IntPtr.Zero);
-
-        Console.WriteLine("Texto y ENTER enviados.");
-    }
-}
+?? Estado detectado: Bad
+?? Estado detectado: Testing...
+?? Estado detectado: Bad
+?? Estado detectado: Testing...
+?? Estado detectado: Bad
+Exception ignored in: <function Image.__del__ at 0x0000016577F409A0>
+Traceback (most recent call last):
+  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 4081, in __del__
+    self.tk.call('image', 'delete', self.name)
+RuntimeError: main thread is not in main loop
+Exception ignored in: <function Variable.__del__ at 0x0000016577F1F060>
+Traceback (most recent call last):
+  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 410, in __del__
+    if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: main thread is not in main loop
+Exception ignored in: <function Variable.__del__ at 0x0000016577F1F060>
+Traceback (most recent call last):
+  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 410, in __del__
+    if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: main thread is not in main loop
+Exception ignored in: <function Variable.__del__ at 0x0000016577F1F060>
+Traceback (most recent call last):
+  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 410, in __del__
+    if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: main thread is not in main loop
+Exception ignored in: <function Variable.__del__ at 0x0000016577F1F060>
+Traceback (most recent call last):
+  File "C:\Users\EasyTouch\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 410, in __del__
+    if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: main thread is not in main loop
+Tcl_AsyncDelete: async handler deleted by the wrong thread
+PS X:\CyclesCounter\GeneralCounter>
