@@ -28,6 +28,7 @@ archivos = Array( _
     "59Z178-000-F.txt", _
     "59Z231-000-A.txt", _
     "59Z232-000-A.txt", _
+    "AMZ010-C00-F.txt", _
     "AMZ040-C00-A.txt", _
     "AMZ040-C00-B.txt", _
     "AMZ14P-001-A.txt", _

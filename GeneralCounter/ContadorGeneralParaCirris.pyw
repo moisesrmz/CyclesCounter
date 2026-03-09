@@ -621,11 +621,28 @@ class ConsoleUiMonitor(threading.Thread):
                             if not test_hwnd and win is not None:
                                 test_hwnd = getattr(win, "handle", None)
 
+                            # ---- BLOQUEO con delay para evitar race condition ----
                             if should_lock and not test_locked:
-                                if set_window_enabled(test_hwnd, False):
-                                    test_locked = True
-                                    print("🔒 Test Program BLOQUEADO (estado Good/Bueno)")
 
+                                def delayed_lock():
+                                    try:
+                                        global current_test_state
+
+                                        # Verificar estado REAL al momento de bloquear
+                                        if is_good_state(current_test_state):
+                                            if set_window_enabled(test_hwnd, False):
+                                                print("🔒 Test Program BLOQUEADO (estado Good/Bueno)")
+                                        else:
+                                            print("⚠️ Good ya no está activo, no se bloquea")
+
+                                    except Exception as e:
+                                        print("⚠️ Error en delayed_lock:", e)
+
+                                # Esperar 300 ms antes de bloquear
+                                if 'root' in globals() and root.winfo_exists():
+                                    root.after(300, delayed_lock)
+
+                                test_locked = True
                             elif (not should_lock) and test_locked:
                                 if set_window_enabled(test_hwnd, True):
                                     test_locked = False
@@ -801,7 +818,7 @@ def toggle_vbs_script(event=None):
 def force_focus():
     try:
         root.attributes('-topmost', True)        # Siempre al frente
-        root.focus_force()                       # Forzar foco
+        root.focus_force()                       
         root.update_idletasks()
     except Exception as e:
         print(f"⚠️ Error forzando foco: {e}")
