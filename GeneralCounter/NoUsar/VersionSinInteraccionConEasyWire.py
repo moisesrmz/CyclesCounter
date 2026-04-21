@@ -2,7 +2,6 @@ import os
 import time
 import tkinter as tk
 import re
-from tkinter import ttk
 from datetime import datetime, timedelta
 import threading
 import subprocess
@@ -17,9 +16,79 @@ import pythoncom
 from pywinauto import Desktop
 from pywinauto.timings import TimeoutError as PwaTimeoutError
 
-
 current_test_state = None
+block_overlay = None
 
+def safe_ui(func, *args, **kwargs):
+    try:
+        if root.winfo_exists():
+            root.after(0, lambda: func(*args, **kwargs))
+    except:
+        pass
+
+def is_good_state(state: str) -> bool:
+    if not state:
+        return False
+    s = state.strip().lower()
+    return ("good" in s) or ("bueno" in s)
+
+def show_block_overlay():
+    global block_overlay
+
+    try:
+        if block_overlay is not None and block_overlay.winfo_exists():
+            return
+        block_overlay = tk.Toplevel(root)
+        block_overlay.overrideredirect(True)
+        block_overlay.attributes("-topmost", True)
+        block_overlay.attributes("-alpha", 0.18)  # Transparencia del overlay
+        block_overlay.configure(bg="#7bcf9a")
+        screen_width = block_overlay.winfo_screenwidth()
+        screen_height = block_overlay.winfo_screenheight()
+        width = screen_width
+        height = int(screen_height * 0.80)
+        x = 0
+        y = 0
+        block_overlay.geometry(f"{width}x{height}+{x}+{y}")
+        block_overlay.lift()
+        block_overlay.focus_force()
+        # Traga clics/teclas
+        block_overlay.bind("<Button-1>", lambda e: "break")
+        block_overlay.bind("<ButtonRelease-1>", lambda e: "break")
+        block_overlay.bind("<Double-Button-1>", lambda e: "break")
+        block_overlay.bind("<Triple-Button-1>", lambda e: "break")
+        block_overlay.bind("<Key>", lambda e: "break")
+
+    except Exception as e:
+        print(f"⚠️ Error mostrando overlay: {e}")
+
+
+def hide_block_overlay():
+    global block_overlay
+    try:
+        if block_overlay is not None and block_overlay.winfo_exists():
+            block_overlay.destroy()
+        block_overlay = None
+    except Exception as e:
+        print(f"⚠️ Error ocultando overlay: {e}")
+
+
+def on_ctrl_press(event=None):
+    root._ctrl_pressed = True
+
+
+def on_ctrl_release(event=None):
+    root._ctrl_pressed = False
+
+
+def on_close_attempt():
+    try:
+        if getattr(root, "_ctrl_pressed", False):
+            close_app()
+        else:
+            print("❌ Cierre bloqueado.")
+    except Exception as e:
+        print(f"⚠️ Error en cierre controlado: {e}")
 
 
 EMBEDDED_QTY_EXCEPTIONS = [
@@ -71,6 +140,7 @@ EMBEDDED_QTY_EXCEPTIONS = [
     (2154170052, 'SJ8T-19A397-LEA', 13)
 ]
 
+
 class FileModifiedHandler(FileSystemEventHandler):
     def __init__(self, label, cycle_label, fail_label, yield_label, canvas, frame_color):
         self.label = label
@@ -79,10 +149,12 @@ class FileModifiedHandler(FileSystemEventHandler):
         self.yield_label = yield_label
         self.canvas = canvas
         self.frame_color = frame_color
+
         self.modification_count = 0
         self.fail_count = 0
         self.yield_value = 100
         self.timestamps = deque(maxlen=50)
+
         self.qty_exceptions = {}
         self.np_equivalence_map = {}
         self.current_part_number = None
@@ -95,119 +167,173 @@ class FileModifiedHandler(FileSystemEventHandler):
             datetime.strptime("14:25", "%H:%M").time(),
             datetime.strptime("21:55", "%H:%M").time()
         ]
+
         self.folder_path = r"C:\\Users\\Public\\Documents\\Cirris\\printer"
         self.recently_incremented = False
+
         self.start_timer()
-        self.draw_gauge()
+
+    def lerp_color(self, c1, c2, t):
+        t = max(0, min(1, t))
+        return tuple(c1[i] + (c2[i] - c1[i]) * t for i in range(3))
+
+    def animate_gauge(self, target_value, duration=0.9, steps=40):
+        start_value = self.yield_value
+        delta = target_value - start_value
+
+        def step(i):
+            if not root.winfo_exists():
+                return
+
+            if i > steps:
+                self.yield_value = target_value
+                self.draw_gauge()
+
+                if target_value >= 100:
+                    self.animate_glow()
+                return
+
+            t = i / steps
+            ease = 1 - (1 - t) ** 3
+
+            self.yield_value = start_value + delta * ease
+            self.draw_gauge()
+
+            root.after(int(duration * 1000 / steps), lambda: step(i + 1))
+
+        step(0)
+
+    def animate_glow(self):
+        pulses = 6
+        max_alpha = 0.25
+
+        def pulse(i):
+            if not root.winfo_exists():
+                return
+
+            if i > pulses:
+                self.draw_gauge()
+                return
+
+            alpha = max_alpha * (1 - abs(i - pulses / 2) / (pulses / 2))
+            self.draw_gauge(glow_alpha=alpha)
+
+            root.after(60, lambda: pulse(i + 1))
+
+        pulse(0)
 
     def start_timer(self):
         t = threading.Timer(60, self.check_reset)
         t.daemon = True
         t.start()
 
-
     def check_reset(self):
         current_time = datetime.now().time()
-        if any(reset_time <= current_time < (datetime.combine(datetime.today(), reset_time) + timedelta(minutes=1)).time()
-               for reset_time in self.reset_times):
+        if any(
+            reset_time <= current_time < (
+                datetime.combine(datetime.today(), reset_time) + timedelta(minutes=1)
+            ).time()
+            for reset_time in self.reset_times
+        ):
             self.reset_counters()
         self.start_timer()
 
     def reset_counters(self):
-        self.yield_value = 100
-        self.yield_label.config(text="Yield: 100%")
+        self.yield_value = 0
         self.modification_count = 0
         self.fail_count = 0
         self.timestamps.clear()
-        self.label.config(text="0")
-        self.fail_label.config(text="0")
-        self.cycle_label.config(text="N/A")
-        turno = get_turno_actual()
-        root.title(f"Corrida Actual - Turno {turno} --First Pass Yield--")
-
-        print(f"🔄 Reinicio automático - Turno {turno} a las {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        root.after(0, self.draw_gauge)
         self.current_part_number = None
         self.forgiven_fails_remaining = 0
         self.forgiven_good_remaining = 0
         self.load_qty_exceptions()
-        print("Reinicio - Reset de red rabbits")
-    
+
+        safe_ui(self.yield_label.config, text="Yield: 100%")
+        safe_ui(self.label.config, text="0")
+        safe_ui(self.fail_label.config, text="0")
+        safe_ui(self.cycle_label.config, text="N/A")
+        safe_ui(self.animate_gauge, 100)
+
+        turno = get_turno_actual()
+        safe_ui(root.title, f"Corrida Actual - Turno {turno} --First Pass Yield--")
 
     def on_modified(self, event):
+        try:
+            if not root.winfo_exists():
+                return
+        except:
+            return
+
         self.update_yield()
+
         if event.is_directory or not event.src_path.lower().endswith(".prn"):
             return
+
         if not self.recently_incremented:
             self.timestamps.append(datetime.now())
             self.update_cycle_time()
             self.check_for_failures(event.src_path)
             self.recently_incremented = True
-            threading.Timer(1, self.reset_increment_flag).start()
+
+            t = threading.Timer(1, self.reset_increment_flag)
+            t.daemon = True
+            t.start()
 
     def update_cycle_time(self):
         if len(self.timestamps) > 1:
-            total_time = sum((self.timestamps[i] - self.timestamps[i - 1]).total_seconds() for i in range(1, len(self.timestamps)))
+            total_time = sum(
+                (self.timestamps[i] - self.timestamps[i - 1]).total_seconds()
+                for i in range(1, len(self.timestamps))
+            )
             average_cycle_time = total_time / (len(self.timestamps) - 1)
-            self.cycle_label.config(text=f"{average_cycle_time:.1f}s")
+            safe_ui(self.cycle_label.config, text=f"{average_cycle_time:.1f}s")
 
     def check_for_failures(self, file_path):
-        if file_path.lower().endswith(".prn"):
-            for attempt in range(5):
-                try:
-                    with open(file_path, "r", encoding="utf-8") as file:
-                        first_line = file.readline().strip()
-                        file.seek(0)
+        for _ in range(5):
+            try:
+                with open(file_path, "r", encoding="utf-8") as file:
+                    first_line = file.readline().strip()
+                    file.seek(0)
 
-                        part_number = None
-                        for line in file:
-                            match = re.search(r"FD([^\s\^]+)", line)
-                            if match:
-                                part_number = match.group(1)
-                                break
+                    part_number = None
+                    for line in file:
+                        match = re.search(r"FD([^\s\^]+)", line)
+                        if match:
+                            part_number = match.group(1)
+                            break
 
-                        is_failure = "^XA" in first_line
+                    is_failure = "^XA" in first_line
+                    key_np = self.np_equivalence_map.get(part_number, part_number)
+                    normalized_current = self.np_equivalence_map.get(
+                        self.current_part_number, self.current_part_number
+                    )
 
-                        if is_failure:
-                            key_np = self.np_equivalence_map.get(part_number)
-                            if not key_np:
-                                show_np_not_found_toast()
-                                key_np = part_number
+                    if key_np != normalized_current:
+                        self.current_part_number = key_np
+                        self.forgiven_fails_remaining = self.qty_exceptions.get(key_np, 10)
+                        self.forgiven_good_remaining = 2
+
+                    if is_failure:
+                        if self.forgiven_fails_remaining > 0:
+                            self.forgiven_fails_remaining -= 1
                         else:
-                            key_np = part_number
-
-                        normalized_current = self.np_equivalence_map.get(self.current_part_number, self.current_part_number)
-                        if key_np != normalized_current:
-                            print(f"🔁 Número de parte cambiado a: {part_number} (usado como {key_np})")
-                            self.current_part_number = key_np
-                            self.forgiven_fails_remaining = self.qty_exceptions.get(key_np, 10)
-                            self.forgiven_good_remaining = 2
-                            print(f"📄 Carga inicial de no contar: {self.forgiven_fails_remaining} fallas, 1 pieza buena para NP {key_np}")
-
-                        if is_failure:
-                            if self.forgiven_fails_remaining > 0:
-                                self.forgiven_fails_remaining -= 1
-                                print(f"Falla NO CONTADA. Quedan {self.forgiven_fails_remaining}")
-                            else:
-                                self.fail_count += 1
-                                self.fail_label.config(text=f"{self.fail_count}")
-                                self.modification_count += 1  # <-- 🔥 SUMAR TAMBIÉN LA FALLA COMO PIEZA PROCESADA
-                                self.label.config(text=f"{self.modification_count}")
-                                print(f"Falla CONTADA. Total: {self.fail_count}")
+                            self.fail_count += 1
+                            self.modification_count += 1
+                            safe_ui(self.fail_label.config, text=f"{self.fail_count}")
+                            safe_ui(self.label.config, text=f"{self.modification_count}")
+                    else:
+                        if self.forgiven_good_remaining > 0:
+                            self.forgiven_good_remaining -= 1
                         else:
-                            if self.forgiven_good_remaining > 0:
-                                self.forgiven_good_remaining -= 1
-                                print(f"Pieza buena (no contada)")
-                            else:
-                                self.modification_count += 1
-                                self.label.config(text=f"{self.modification_count}")
-                                print(f"Pieza buena contada. Total: {self.modification_count}")
-                    break
-                except PermissionError:
-                    time.sleep(0.5)
-                except Exception as e:
-                    print(f"⚠️ Error inesperado: {e}")
-                    break
+                            self.modification_count += 1
+                            safe_ui(self.label.config, text=f"{self.modification_count}")
+                break
+
+            except PermissionError:
+                time.sleep(0.5)
+            except Exception as e:
+                print("⚠️ Error inesperado:", e)
+                break
 
     def reset_increment_flag(self):
         self.recently_incremented = False
@@ -216,50 +342,92 @@ class FileModifiedHandler(FileSystemEventHandler):
         if self.modification_count == 0:
             self.yield_value = 100
         else:
-            self.yield_value = max(0, ((self.modification_count - self.fail_count) / self.modification_count) * 100)
-        self.yield_label.config(text=f"Yield: {self.yield_value:.2f}%")
-        root.after(0, self.draw_gauge)
+            self.yield_value = max(
+                0,
+                ((self.modification_count - self.fail_count) / self.modification_count) * 100
+            )
 
-    def draw_gauge(self):
-        if hasattr(self.canvas, 'figure'):
-            plt.close(self.canvas.figure)
-        fig, ax = plt.subplots(figsize=(3, 2))
-        fig.patch.set_facecolor("#E0E0E0")
+        safe_ui(self.yield_label.config, text=f"Yield: {self.yield_value:.2f}%")
+        safe_ui(self.draw_gauge)
+
+    def draw_gauge(self, glow_alpha=0):
+        ax = self.ax
+        ax.clear()
+
+        self.fig.patch.set_facecolor("#E0E0E0")
         ax.set_facecolor("none")
-        ax.text(0, 0.87, "Yield", ha="center", va="center", fontsize=12, color="black")
+        ax.text(0, 0.87, "Yield", ha="center", va="center", fontsize=12)
+
         angle = np.interp(self.yield_value, [0, 100], [180, 0])
+
+        red = (1, 0.39, 0.39)
+        yellow = (1, 0.84, 0.25)
+        green = (0.45, 0.77, 0.58)
+
         if self.yield_value <= 80:
-            bar_color = (255/255, 126/255, 99/255, 0.9)
-        elif self.yield_value <= 90:
-            bar_color = (255/255, 215/255, 64/255, 0.9)
+            t = self.yield_value / 80 if 80 else 0
+            bar_color = self.lerp_color(red, yellow, t)
         else:
-            bar_color = (114/255, 196/255, 149/255, 0.9)
-        ax.add_patch(Wedge((0, 0), 1, 0, 180, facecolor="#B0B0B0", edgecolor="none", lw=1))
-        ax.add_patch(Wedge((0, 0), 1, angle, 180, facecolor=bar_color))
-        ax.add_patch(Wedge((0, 0), 0.8, 0, 180, facecolor="#E0E0E0", edgecolor="none", zorder=10))
-        ax.text(0, 0.2, f"{self.yield_value:.1f}%", ha='center', va='center', fontsize=18, fontweight='bold', color="black", zorder=11)
-        ax.text(-1.1, 0.1, "0", ha='center', va='center', fontsize=10, color="black")
-        ax.text(1.1, 0.1, "   100", ha='center', va='center', fontsize=10, color="black")
-        ax.set_xticks([]), ax.set_yticks([])
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        ax.set_xlim(-1.2, 1.2), ax.set_ylim(-0.2, 1.2)
-        self.canvas.figure = fig
-        self.canvas.draw()
+            t = (self.yield_value - 80) / 20 if 20 else 0
+            bar_color = self.lerp_color(yellow, green, t)
+
+        ax.add_patch(Wedge((0, 0), 1, 0, 180,
+                           facecolor="#B0B0B0",
+                           edgecolor="none",
+                           linewidth=0,
+                           antialiased=False))
+
+        ax.add_patch(Wedge((0, 0), 1, angle, 180,
+                           facecolor=bar_color,
+                           edgecolor="none",
+                           linewidth=0,
+                           antialiased=False))
+
+        if glow_alpha > 0:
+            ax.add_patch(Wedge((0, 0), 1.08, 0, 180,
+                               facecolor=(0.4, 1, 0.4, glow_alpha),
+                               edgecolor="none",
+                               linewidth=0))
+
+        ax.add_patch(Wedge((0, 0), 0.8, 0, 180,
+                           facecolor="#E0E0E0",
+                           edgecolor="none",
+                           linewidth=0,
+                           antialiased=False))
+
+        ax.text(0, 0.2,
+                f"{self.yield_value:.1f}%",
+                ha='center',
+                va='center',
+                fontsize=18,
+                fontweight='bold')
+
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlim(-1.2, 1.2)
+        ax.set_ylim(-0.2, 1.2)
+
+        self.canvas.draw_idle()
 
     def load_qty_exceptions(self):
         try:
             self.qty_exceptions.clear()
             self.np_equivalence_map.clear()
+
             for original, equivalent, qty in EMBEDDED_QTY_EXCEPTIONS:
                 original = str(original).strip()
                 equivalent = str(equivalent).strip()
-                self.qty_exceptions[equivalent or original] = qty
-                self.np_equivalence_map[original] = equivalent or original
-                self.np_equivalence_map[equivalent] = equivalent or original
-            print("📦 QTY excepciones cargadas desde datos embebidos.")
+
+                key = equivalent if equivalent else original
+
+                self.qty_exceptions[key] = qty
+                self.np_equivalence_map[original] = key
+                self.np_equivalence_map[equivalent] = key
+
+            print("📦 QTY excepciones cargadas correctamente.")
+
         except Exception as e:
-            print(f"⚠️ Error al cargar datos embebidos: {e}")
+            print("⚠️ Error cargando excepciones:", e)
 
 
 def update_window_title():
@@ -274,20 +442,25 @@ def update_window_title():
             f"Corrida Actual - Turno {turno} --First Pass Yield--"
         )
 
+
 def show_np_not_found_toast():
     toast = tk.Toplevel()
     toast.overrideredirect(True)
     toast.attributes("-topmost", True)
-    toast.attributes("-alpha", 0.95)  # Ligera transparencia
+    toast.attributes("-alpha", 0.95)
     toast.configure(bg="#ff4d4d")
+
     screen_width = toast.winfo_screenwidth()
     screen_height = toast.winfo_screenheight()
     width, height = 300, 60
     x = (screen_width // 2) - (width // 2)
-    y = (screen_height // 2) - (height // 2) - 100  # Arriba del centro
+    y = (screen_height // 2) - (height // 2) - 100
+
     toast.geometry(f"{width}x{height}+{x}+{y}")
+
     frame = tk.Frame(toast, bg="#ff4d4d", bd=0, relief="flat", highlightthickness=0)
     frame.pack(expand=True, fill="both")
+
     label = tk.Label(
         frame,
         text="⚠️ Agregar NP a ContadorGeneralParaCirris.pyw",
@@ -296,24 +469,23 @@ def show_np_not_found_toast():
         bg="#ff4d4d"
     )
     label.pack(expand=True)
+
     toast.after(2500, toast.destroy)
+
 
 def get_turno_actual():
     now = datetime.now().time()
-    if now >= datetime.strptime("06:24", "%H:%M").time() and now < datetime.strptime("14:24", "%H:%M").time():
+    if datetime.strptime("06:24", "%H:%M").time() <= now < datetime.strptime("14:24", "%H:%M").time():
         return 1
-    elif now >= datetime.strptime("14:24", "%H:%M").time() and now < datetime.strptime("21:54", "%H:%M").time():
+    elif datetime.strptime("14:24", "%H:%M").time() <= now < datetime.strptime("21:54", "%H:%M").time():
         return 2
     else:
         return 3
-# =======================
-#  MONITOR CONSOLA - TEST MONITOR
-# =======================
+
 
 TITLE_CONTAINS = "Test Program"
 POLL_MS = 100
 RETRY_MS = 300
-#STATE_NAMES = {"Good", "Bad", "Attach then Start", "Ready to Test"}
 
 
 def find_top_state_pane(win):
@@ -339,6 +511,7 @@ def find_top_state_pane(win):
     candidates.sort(key=lambda x: (x[0], -x[1]))
     return candidates[0][2]
 
+
 class ConsoleUiMonitor(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
@@ -357,9 +530,7 @@ class ConsoleUiMonitor(threading.Thread):
                 pythoncom.CoInitialize()
                 initialized_here = True
             except pythoncom.com_error as e:
-                # Ignorar RPC_E_CHANGED_MODE específicamente
                 if hasattr(e, "hresult") and e.hresult == -2147417850:
-                    # RPC_E_CHANGED_MODE → ya estaba inicializado, no es fatal
                     pass
                 else:
                     print("Error COM inesperado:", e)
@@ -370,7 +541,6 @@ class ConsoleUiMonitor(threading.Thread):
             waiting_printed = False
 
             while self._running.is_set():
-
                 try:
                     if win is None:
                         try:
@@ -380,6 +550,12 @@ class ConsoleUiMonitor(threading.Thread):
 
                             pane = None
                             last_state = None
+
+                            try:
+                                if root.winfo_exists():
+                                    root.after(0, hide_block_overlay)
+                            except:
+                                pass
 
                             print("✅ Conectado a Test monitor")
                             waiting_printed = False
@@ -396,6 +572,13 @@ class ConsoleUiMonitor(threading.Thread):
                         win.wait("exists", timeout=0.2)
                     except Exception:
                         print("⚠️ Ventana cerrada. Reintentando conexión...")
+
+                        try:
+                            if root.winfo_exists():
+                                root.after(0, hide_block_overlay)
+                        except:
+                            pass
+
                         win = None
                         pane = None
                         last_state = None
@@ -409,6 +592,7 @@ class ConsoleUiMonitor(threading.Thread):
                             continue
 
                     state = " ".join((pane.window_text() or "").strip().split())
+
                     if state != last_state:
                         if state:
                             print(f"📡 Estado detectado: {state}")
@@ -421,12 +605,20 @@ class ConsoleUiMonitor(threading.Thread):
                         current_test_state = state if state else None
 
                         try:
+                            if is_good_state(state):
+                                if root.winfo_exists():
+                                    root.after(0, show_block_overlay)
+                            else:
+                                if root.winfo_exists():
+                                    root.after(0, hide_block_overlay)
+                        except Exception as e:
+                            print("⚠️ Error overlay:", e)
+
+                        try:
                             if root.winfo_exists():
                                 root.after(0, update_window_title)
                         except Exception:
                             pass
-
-
 
                     time.sleep(POLL_MS / 1000)
 
@@ -439,106 +631,168 @@ class ConsoleUiMonitor(threading.Thread):
 
         finally:
             try:
-                pythoncom.CoUninitialize()
+                if root.winfo_exists():
+                    root.after(0, hide_block_overlay)
             except:
                 pass
+
+            if initialized_here:
+                try:
+                    pythoncom.CoUninitialize()
+                except:
+                    pass
+
 
 def main():
     global root, vbs_process
     vbs_process = None
+
     root = tk.Tk()
-    # Establecer el título dinámico desde el arranque
+
     turno = get_turno_actual()
-    root.protocol("WM_DELETE_WINDOW", lambda: print("❌ Botón cerrar deshabilitado"))
-    #root.title(f"Corrida Actual - Turno {turno}")
+    root.protocol("WM_DELETE_WINDOW", on_close_attempt)
     root.title(f"Corrida Actual - Turno {turno} --First Pass Yield--")
-    #root.title("Monitor de Piezas Probadas")
-    root.geometry("580x150+435+520")  #  Ampliamos el ancho para mejor distribución
+    root.geometry("580x150+435+520")
     root.resizable(False, False)
-    #root.overrideredirect(True)
-    bg_color = "#F5F5F5"       # Fondo principal (Blanco humo)
-    text_color = "#333333"      # Texto principal (Negro suave)
-    highlight_color = "#0078D7" # Azul brillante para resaltar
-    frame_color = "#E0E0E0"     # Marco (Gris claro)
-    fail_color = "#D32F2F"      # Rojo oscuro para fallas
+
+    text_color = "#333333"
+    frame_color = "#E0E0E0"
+
     root.configure(bg=frame_color)
-    # **Dividimos la interfaz en dos partes**
+
     main_frame = tk.Frame(root, bg=frame_color)
     main_frame.pack(expand=True, fill="both", padx=10, pady=10)
+
     frame_left = tk.Frame(main_frame, bg=frame_color)
     frame_left.grid(row=0, column=0, sticky="w", padx=10)
-    frame_right = tk.Frame(main_frame, bg=frame_color, width=320, height=120)  
+
+    frame_right = tk.Frame(main_frame, bg=frame_color, width=320, height=120)
     frame_right.grid(row=0, column=1, sticky="n", padx=10)
-    frame_right.grid_propagate(False)  # Evita que se colapse por el contenido
-    label_text = tk.Label(frame_left, text="Total Pzs:", font=("Arial", 16, "bold"),
-                        fg=text_color, bg=frame_color)
+    frame_right.grid_propagate(False)
+
+    label_text = tk.Label(
+        frame_left, text="Total Pzs:", font=("Arial", 16, "bold"),
+        fg=text_color, bg=frame_color
+    )
     label_text.grid(row=0, column=0, sticky="w", padx=10)
-    label = tk.Label(frame_left, text="0", font=("Arial", 20, "bold"),
-                    fg=text_color, bg=frame_color)
-    label.grid(row=0, column=1, sticky="w", padx=5)  #  Espaciado uniforme
-    fail_text = tk.Label(frame_left, text="Fallas:", font=("Arial", 16, "bold"),
-                        fg=text_color, bg=frame_color)
+
+    label = tk.Label(
+        frame_left, text="0", font=("Arial", 20, "bold"),
+        fg=text_color, bg=frame_color
+    )
+    label.grid(row=0, column=1, sticky="w", padx=5)
+
+    fail_text = tk.Label(
+        frame_left, text="Fallas:", font=("Arial", 16, "bold"),
+        fg=text_color, bg=frame_color
+    )
     fail_text.grid(row=1, column=0, sticky="w", padx=10)
-    fail_label = tk.Label(frame_left, text="0", font=("Arial", 16, "bold"),
-                        fg=text_color, bg=frame_color)
+
+    fail_label = tk.Label(
+        frame_left, text="0", font=("Arial", 16, "bold"),
+        fg=text_color, bg=frame_color
+    )
     fail_label.grid(row=1, column=1, sticky="w", padx=5)
-    cycle_text = tk.Label(frame_left, text="Tiempo ciclo:", font=("Arial", 16, "bold"),
-                        fg=text_color, bg=frame_color)
+
+    cycle_text = tk.Label(
+        frame_left, text="Tiempo ciclo:", font=("Arial", 16, "bold"),
+        fg=text_color, bg=frame_color
+    )
     cycle_text.grid(row=2, column=0, sticky="w", padx=10)
-    cycle_label = tk.Label(frame_left, text="N/A", font=("Arial", 16, "bold"),
-                        fg=text_color, bg=frame_color)
+
+    cycle_label = tk.Label(
+        frame_left, text="N/A", font=("Arial", 16, "bold"),
+        fg=text_color, bg=frame_color
+    )
     cycle_label.grid(row=2, column=1, sticky="w", padx=5)
-    yield_text = tk.Label(frame_left, text="Yield:", font=("Arial", 16, "bold"),
-                        fg=text_color, bg=frame_color)
+
+    yield_text = tk.Label(
+        frame_left, text="Yield:", font=("Arial", 16, "bold"),
+        fg=text_color, bg=frame_color
+    )
     yield_text.grid(row=3, column=0, sticky="w", padx=10)
-    yield_label = tk.Label(frame_left, text="100%", font=("Arial", 16, "bold"),
-                        fg=text_color, bg=frame_color)
-    yield_text.grid_remove()  # Esto lo oculta sin eliminarlo
+
+    yield_label = tk.Label(
+        frame_left, text="100%", font=("Arial", 16, "bold"),
+        fg=text_color, bg=frame_color
+    )
+    yield_text.grid_remove()
+
     gauge_frame = tk.Frame(frame_right, bg="lightgray", width=300, height=200)
-    gauge_frame.place(x=10, y=-40)  # 🔼 Lo colocamos visible
-    gauge_frame.pack_propagate(False)  # Mantener el tamaño fijo
-    # Crear una figura de Matplotlib
-    fig, ax = plt.subplots(figsize=(3, 1.6))
+    gauge_frame.place(x=10, y=-40)
+    gauge_frame.pack_propagate(False)
+
+    fig, ax = plt.subplots(figsize=(3, 2))
     canvas = FigureCanvasTkAgg(fig, master=gauge_frame)
     canvas.get_tk_widget().pack()
-    file_handler = FileModifiedHandler(label, cycle_label, fail_label, yield_label, canvas, frame_color)
+
+    file_handler = FileModifiedHandler(
+        label, cycle_label, fail_label, yield_label, canvas, frame_color
+    )
+    file_handler.fig = fig
+    file_handler.ax = ax
+    file_handler.yield_value = 0
+    file_handler.animate_gauge(100)
+
+    canvas.draw_idle()
+
     observer = Observer()
     observer.schedule(file_handler, file_handler.folder_path, recursive=True)
     observer.start()
+
     force_focus()
-    # ---- Monitor consola Test monitor ----
+
     console_monitor = ConsoleUiMonitor()
     console_monitor.start()
+
     root.bind("<Button-1>", on_title_bar_click)
     root.bind("<B1-Motion>", on_drag_motion)
     root.bind("6", toggle_vbs_script)
-    
-    
+
+    root._ctrl_pressed = False
+    root.bind_all("<KeyPress-Control_L>", on_ctrl_press)
+    root.bind_all("<KeyRelease-Control_L>", on_ctrl_release)
+    root.bind_all("<KeyPress-Control_R>", on_ctrl_press)
+    root.bind_all("<KeyRelease-Control_R>", on_ctrl_release)
+
     try:
         root.mainloop()
     except KeyboardInterrupt:
         print("Aplicación cerrada.")
 
-    # ---- Limpieza ordenada ----
     try:
         console_monitor.stop()
     except:
         pass
 
-    observer.stop()
-    observer.join()
+    try:
+        observer.stop()
+        observer.join()
+    except:
+        pass
+
 
 def toggle_vbs_script(event=None):
     global vbs_process
+
     tester_file_path = r"C:\Users\Public\Documents\Cirris\tester.txt"
     if os.path.exists(tester_file_path):
         with open(tester_file_path, 'r') as file:
             tester_name = file.read().strip()
-        script_path = os.path.join(r"\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter", tester_name, "CyclesCounter.vbs")
+
+        script_path = os.path.join(
+            r"\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter",
+            tester_name,
+            "CyclesCounter.vbs"
+        )
+
         if vbs_process is None:
             if os.path.exists(script_path):
                 try:
-                    vbs_process = subprocess.Popen(['cscript', script_path], creationflags=subprocess.CREATE_NO_WINDOW)
+                    vbs_process = subprocess.Popen(
+                        ['cscript', script_path],
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
                     print("✅ VBScript iniciado.")
                 except Exception as e:
                     print(f"⚠️ Error al ejecutar el script: {e}")
@@ -553,31 +807,48 @@ def toggle_vbs_script(event=None):
             except Exception as e:
                 print(f"Error al detener el script: {e}")
 
+
 def force_focus():
     try:
-        root.attributes('-topmost', True)        # Siempre al frente
-        root.focus_force()                       # Forzar foco
+        root.attributes('-topmost', True)
+        root.focus_force()
         root.update_idletasks()
     except Exception as e:
         print(f"⚠️ Error forzando foco: {e}")
-    root.after(1500, force_focus)  # Cada 1.5s, balanceado
+
+    root.after(1500, force_focus)
+
 
 def on_title_bar_click(event):
-    """Guarda la posición inicial del mouse al hacer clic en la ventana."""
     global root
     root.x_offset = event.x_root - root.winfo_x()
     root.y_offset = event.y_root - root.winfo_y()
 
+
 def on_drag_motion(event):
-    """Mueve la ventana cuando se arrastra con el mouse."""
     global root
     new_x = event.x_root - root.x_offset
     new_y = event.y_root - root.y_offset
     root.geometry(f"+{new_x}+{new_y}")
 
+
 def close_app(event=None):
+    global block_overlay
+
     print("Aplicación cerrada por el usuario.")
-    root.destroy()
+
+    try:
+        if block_overlay is not None and block_overlay.winfo_exists():
+            block_overlay.destroy()
+            block_overlay = None
+    except:
+        pass
+
+    try:
+        root.destroy()
+    except:
+        pass
+
 
 if __name__ == "__main__":
     main()

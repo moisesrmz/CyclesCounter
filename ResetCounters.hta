@@ -1,0 +1,392 @@
+<html>
+<head>
+<title>Counter Reset Panel</title>
+
+<HTA:APPLICATION
+APPLICATIONNAME="CounterReset"
+BORDER="dialog"
+CAPTION="yes"
+SHOWINTASKBAR="yes"
+SINGLEINSTANCE="yes"
+WINDOWSTATE="normal"
+/>
+
+<style>
+
+body{
+font-family:Segoe UI,Arial;
+background:#f4f6f7;
+margin:20px;
+}
+
+.title{
+font-size:24px;
+font-weight:bold;
+margin-bottom:8px;
+}
+
+.sub{
+margin-bottom:16px;
+}
+
+table{
+border-collapse:collapse;
+width:100%;
+background:#fff;
+}
+
+th,td{
+border:1px solid #cfcfcf;
+padding:8px;
+text-align:center;
+}
+
+th{
+background:#2c3e50;
+color:white;
+}
+
+td.module{
+text-align:left;
+font-weight:bold;
+}
+
+button{
+padding:10px 16px;
+font-size:14px;
+margin-top:10px;
+cursor:pointer;
+}
+
+input[type=text]{
+padding:8px;
+font-size:16px;
+width:260px;
+}
+
+</style>
+
+<script language="VBScript">
+
+Option Explicit
+
+Dim fso
+Dim testerName
+Dim basePath
+Dim historyFile
+
+Sub Window_OnLoad()
+
+Set fso = CreateObject("Scripting.FileSystemObject")
+
+Dim testerFile,ts
+testerFile = "C:\Users\Public\Documents\Cirris\tester.txt"
+
+Set ts = fso.OpenTextFile(testerFile,1)
+testerName = Trim(ts.ReadAll)
+ts.Close
+
+basePath = "\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter\" & testerName & "\"
+historyFile = "\\mlxgumvwfile01\Departamentos\Fakra\Pruebas\CyclesCounter\ResetHistory.csv"
+
+testerLabel.innerText = testerName
+
+LoadModules
+
+End Sub
+
+
+Sub LoadModules()
+
+Dim folder,file,moduleName
+Dim tbody,tr,tdModule,tdN1,tdM1,tdM2
+Dim cbN1,cbM1,cbM2
+Dim count
+
+count = 0
+Set tbody = document.getElementById("moduleBody")
+Set folder = fso.GetFolder(basePath)
+
+For Each file In folder.Files
+
+If LCase(fso.GetExtensionName(file.Name))="txt" Then
+
+moduleName = fso.GetBaseName(file.Name)
+
+Set tr=document.createElement("tr")
+
+Set tdModule=document.createElement("td")
+tdModule.className="module"
+tdModule.innerText=moduleName
+tr.appendChild tdModule
+
+Set tdN1=document.createElement("td")
+Set cbN1=document.createElement("input")
+cbN1.setAttribute "type","checkbox"
+tdN1.appendChild cbN1
+tr.appendChild tdN1
+
+Set tdM1=document.createElement("td")
+Set cbM1=document.createElement("input")
+cbM1.setAttribute "type","checkbox"
+tdM1.appendChild cbM1
+tr.appendChild tdM1
+
+Set tdM2=document.createElement("td")
+Set cbM2=document.createElement("input")
+cbM2.setAttribute "type","checkbox"
+tdM2.appendChild cbM2
+tr.appendChild tdM2
+
+tbody.appendChild tr
+count = count + 1
+
+End If
+
+Next
+
+moduleCount.innerText = count
+
+End Sub
+
+
+Function ReadCounterValues(filePath)
+
+Dim txt,ts,arr(2)
+Dim n1,m1,m2
+
+Set ts=fso.OpenTextFile(filePath,1)
+txt=Trim(ts.ReadAll)
+ts.Close
+
+If InStr(txt,"=")>0 Then
+
+n1=ExtractValue(txt,"N1")
+m1=ExtractValue(txt,"M1")
+m2=ExtractValue(txt,"M2")
+
+Else
+
+n1=CLng(txt)
+m1=n1
+m2=n1
+
+End If
+
+arr(0)=n1
+arr(1)=m1
+arr(2)=m2
+
+ReadCounterValues=arr
+
+End Function
+
+
+Function ExtractValue(txt,key)
+
+Dim lines,i,parts,lineTxt
+
+txt=Replace(txt,vbCrLf,vbLf)
+lines=Split(txt,vbLf)
+
+For i=0 To UBound(lines)
+
+lineTxt=Trim(lines(i))
+
+If UCase(Left(lineTxt,Len(key)+1))=UCase(key & "=") Then
+
+parts=Split(lineTxt,"=")
+ExtractValue=CLng(parts(1))
+Exit Function
+
+End If
+
+Next
+
+ExtractValue=0
+
+End Function
+
+
+Sub WriteCounterValues(filePath,n1,m1,m2)
+
+Dim ts
+Set ts=fso.CreateTextFile(filePath,True)
+
+ts.WriteLine "N1=" & n1
+ts.WriteLine "M1=" & m1
+ts.WriteLine "M2=" & m2
+
+ts.Close
+
+End Sub
+
+
+Function GenerateFolio()
+
+Dim sec
+Dim rnd4
+
+Randomize
+
+sec = Right("0" & Second(Time),2)
+
+rnd4 = Int((Rnd * 9000) + 1000)
+
+GenerateFolio = sec & rnd4
+
+End Function
+
+
+Function ValidTechID(id)
+
+If id="21105908" Then
+ValidTechID=True
+Else
+ValidTechID=False
+End If
+
+End Function
+
+Sub EnsureCSVHeader()
+
+If Not fso.FileExists(historyFile) Then
+
+Dim ts
+Set ts = fso.CreateTextFile(historyFile,True)
+
+ts.WriteLine "Date,Time,Tester,TechnicianID,Module,Counter,OldValue,Folio"
+
+ts.Close
+
+End If
+
+End Sub
+
+Sub ResetSelected()
+
+Dim techID
+techID=Trim(document.getElementById("techInput").value)
+
+If Not ValidTechID(techID) Then
+MsgBox "Invalid technician ID"
+Exit Sub
+End If
+
+Dim folio
+folio = GenerateFolio()
+
+Dim row,module,filePath
+Dim vals,n1,m1,m2
+Dim oldN1,oldM1,oldM2
+Dim doN1,doM1,doM2
+Dim ts
+Dim fecha,hora
+
+fecha=Date
+hora=Time
+
+EnsureCSVHeader
+Set ts=fso.OpenTextFile(historyFile,8,True)
+
+For Each row In document.getElementById("moduleBody").children
+
+module=row.cells(0).innerText
+filePath=basePath & module & ".txt"
+
+doN1=row.cells(1).children(0).checked
+doM1=row.cells(2).children(0).checked
+doM2=row.cells(3).children(0).checked
+
+If doN1 Or doM1 Or doM2 Then
+
+vals=ReadCounterValues(filePath)
+
+n1=vals(0)
+m1=vals(1)
+m2=vals(2)
+
+oldN1=n1
+oldM1=m1
+oldM2=m2
+
+If doN1 Then
+n1=0
+ts.WriteLine fecha & "," & hora & "," & testerName & "," & techID & "," & module & ",N1," & oldN1 & "," & folio
+End If
+
+If doM1 Then
+m1=0
+ts.WriteLine fecha & "," & hora & "," & testerName & "," & techID & "," & module & ",M1," & oldM1 & "," & folio
+End If
+
+If doM2 Then
+m2=0
+ts.WriteLine fecha & "," & hora & "," & testerName & "," & techID & "," & module & ",M2," & oldM2 & "," & folio
+End If
+
+WriteCounterValues filePath,n1,m1,m2
+
+End If
+
+Next
+
+ts.Close
+
+MsgBox "Reset completed" & vbCrLf & "Operation folio: " & folio
+
+window.close
+
+End Sub
+
+
+Sub KeyHandler()
+
+If window.event.keyCode=13 Then
+ResetSelected
+End If
+
+End Sub
+
+</script>
+
+</head>
+
+
+<body onkeypress="KeyHandler">
+
+<div class="title">
+Counter Reset Panel
+</div>
+
+<div class="sub">
+Tester: <b><span id="testerLabel"></span></b><br>
+Modules found: <span id="moduleCount">0</span>
+</div>
+
+<table>
+
+<thead>
+<tr>
+<th>Module</th>
+<th>N1</th>
+<th>M1</th>
+<th>M2</th>
+</tr>
+</thead>
+
+<tbody id="moduleBody"></tbody>
+
+</table>
+
+<br>
+
+Scan technician ID:
+<input type="text" id="techInput">
+
+<br>
+
+<button onclick="ResetSelected">RESET SELECTED</button>
+
+</body>
+</html>
